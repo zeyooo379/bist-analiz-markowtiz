@@ -1,0 +1,15 @@
+.streamlit/config.toml
+.streamlit/secrets.toml
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+.vscode/
+.idea/
+.DS_Store
+*.xlsx
+*.csv
