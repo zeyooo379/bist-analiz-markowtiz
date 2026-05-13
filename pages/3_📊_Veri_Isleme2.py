@@ -529,6 +529,8 @@ with p3:
 st.markdown("---")
 st.markdown("### 📉 Efficient Frontier")
 
+show_cml = st.checkbox("📈 CML'yi Göster", value=False)
+
 frontier_points = st.slider(
     "Frontier nokta sayısı",
     min_value=10,
@@ -666,6 +668,7 @@ else:
         if go is not None:
             fig = go.Figure()
 
+            # Efficient Frontier
             fig.add_trace(
                 go.Scatter(
                     x=frontier_df["Volatilite / Std Sapma (%)"],
@@ -683,6 +686,7 @@ else:
                 )
             )
 
+            # Minimum Volatilite
             fig.add_trace(
                 go.Scatter(
                     x=[min_vol_summary["Yıllık Volatilite / Std Sapma (%)"]],
@@ -690,15 +694,10 @@ else:
                     mode="markers",
                     name="Minimum Volatilite",
                     marker=dict(size=12),
-                    hovertemplate=(
-                        "Minimum Volatilite<br>"
-                        "Volatilite / Std Sapma: %{x:.2f}%<br>"
-                        "Beklenen Getiri: %{y:.2f}%<br>"
-                        "<extra></extra>"
-                    ),
                 )
             )
 
+            # Max Sharpe
             fig.add_trace(
                 go.Scatter(
                     x=[max_sharpe_summary["Yıllık Volatilite / Std Sapma (%)"]],
@@ -706,15 +705,10 @@ else:
                     mode="markers",
                     name="Maksimum Sharpe",
                     marker=dict(size=12),
-                    hovertemplate=(
-                        "Maksimum Sharpe<br>"
-                        "Volatilite / Std Sapma: %{x:.2f}%<br>"
-                        "Beklenen Getiri: %{y:.2f}%<br>"
-                        "<extra></extra>"
-                    ),
                 )
             )
 
+            # Max Return
             fig.add_trace(
                 go.Scatter(
                     x=[max_return_summary["Yıllık Volatilite / Std Sapma (%)"]],
@@ -722,14 +716,62 @@ else:
                     mode="markers",
                     name="Maksimum Getiri",
                     marker=dict(size=12),
-                    hovertemplate=(
-                        "Maksimum Getiri<br>"
-                        "Volatilite / Std Sapma: %{x:.2f}%<br>"
-                        "Beklenen Getiri: %{y:.2f}%<br>"
-                        "<extra></extra>"
-                    ),
                 )
             )
+
+            # =============================================================================
+            # CAPITAL MARKET LINE (RISK-FREE ASSET)
+            # =============================================================================
+
+            rf_percent = risk_free_rate * 100
+            cml_return = max_sharpe_summary["Beklenen Yıllık Getiri (%)"]
+            cml_vol = max_sharpe_summary["Yıllık Volatilite / Std Sapma (%)"]
+
+            if show_cml and cml_vol > 0:
+                cml_x = np.linspace(
+                    0,
+                    max(
+                        frontier_df["Volatilite / Std Sapma (%)"].max() * 1.15,
+                        cml_vol * 1.25,
+                    ),
+                    150,
+                )
+
+                cml_slope = (cml_return - rf_percent) / cml_vol
+                cml_y = rf_percent + cml_slope * cml_x
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=cml_x,
+                        y=cml_y,
+                        mode="lines",
+                        name="Capital Market Line",
+                        line=dict(dash="dash", width=3),
+                        hovertemplate=(
+                            "Capital Market Line<br>"
+                            "Volatilite / Std Sapma: %{x:.2f}%<br>"
+                            "Beklenen Getiri: %{y:.2f}%<br>"
+                            "<extra></extra>"
+                        ),
+                    )
+                )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=[0],
+                        y=[rf_percent],
+                        mode="markers",
+                        name="Risk-Free Asset",
+                        marker=dict(size=13, symbol="diamond"),
+                        hovertemplate=(
+                            "Risk-Free Asset<br>"
+                            "Volatilite / Std Sapma: 0.00%<br>"
+                            "Beklenen Getiri: %{y:.2f}%<br>"
+                            "<extra></extra>"
+                        ),
+                    )
+                )
+
 
             fig.update_layout(
                 xaxis_title="Yıllık Standart Sapma / Volatilite (%)",
@@ -754,6 +796,7 @@ else:
                 frontier_df.set_index("Volatilite / Std Sapma (%)")["Beklenen Getiri (%)"],
                 use_container_width=True,
             )
+
 
         with st.expander("📋 Efficient Frontier Verisi"):
             st.dataframe(
@@ -887,3 +930,61 @@ st.session_state["analysis_data"] = {
 }
 
 st.success("✅ Markowitz analiz verileri session state'e kaydedildi.")
+
+# =============================================================================
+# 12. CML PORTFÖY DAĞILIMI (RISK-FREE + TANGENCY MIX)
+# =============================================================================
+
+st.markdown("---")
+st.markdown("### 🧩 CML Portföy Dağılımı (Risk-Free + Riskli Portföy)")
+
+if "max_sharpe_weights" in st.session_state.get("analysis_data", {}):
+
+    # Tangency portfolio
+    mu = expected_returns.values
+    cov = annual_covariance.values
+
+    rf = risk_free_rate
+
+    tangency_return = portfolio_return(max_sharpe_weights, mu)
+    tangency_vol = portfolio_volatility(max_sharpe_weights, cov)
+    tangency_sharpe = portfolio_sharpe(max_sharpe_weights, mu, cov, rf)
+
+    # Slider: riskli varlık oranı
+    y = st.slider(
+        "Riskli varlık oranı (y)",
+        min_value=0.0,
+        max_value=2.0,
+        value=1.0,
+        step=0.05,
+        help="1 = sadece tangency portfolio, 0 = sadece risk-free, >1 = kaldıraç",
+    )
+
+    rf_weight = max(0.0, 1 - y)
+    risky_weight = y
+
+    portfolio_return_cml = rf + y * (tangency_return - rf)
+    portfolio_vol_cml = abs(y) * tangency_vol
+
+    st.markdown("#### 📊 Portföy Dağılımı")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Risk-Free Asset (%)", f"%{rf_weight * 100:.1f}")
+    c2.metric("Riskli Portföy (Tangency) (%)", f"%{risky_weight * 100:.1f}")
+    c3.metric("Beklenen Getiri (%)", f"%{portfolio_return_cml * 100:.2f}")
+    c4.metric("Volatilite (%)", f"%{portfolio_vol_cml * 100:.2f}")
+
+    st.markdown("#### 🧠 Açıklama")
+
+    if y == 1:
+        st.info("Bu portföy tamamen Max Sharpe (Tangency) portföyüdür. Risk-free yoktur.")
+    elif y == 0:
+        st.info("Bu portföy tamamen risk-free asset'tir.")
+    elif y > 1:
+        st.warning("Bu portföy kaldıraçlıdır (borç alarak yatırım).")
+    else:
+        st.success("Bu portföy risk-free ve riskli varlık karışımıdır (CML üzeri optimal portföy).")
+
+else:
+    st.warning("⚠️ Önce optimizasyon çalıştırılmalı (Max Sharpe bulunmalı).")
